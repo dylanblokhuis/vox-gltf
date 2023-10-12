@@ -39,12 +39,12 @@ enum Output {
     Binary,
 }
 
-#[repr(C, align(4))]
+#[repr(C, packed)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
-    color: [u8; 4],
+    color: [f32; 4],
 }
 
 /// Calculate bounding coordinates of a list of vertices, used for the clipping distance of the model
@@ -60,6 +60,23 @@ fn bounding_coords(points: &[Vertex]) -> ([f32; 3], [f32; 3]) {
         }
     }
     (min, max)
+}
+
+
+fn align_to_multiple_of_four(n: &mut u32) {
+    *n = (*n + 3) & !3;
+}
+
+fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
+    let byte_length = vec.len() * std::mem::size_of::<T>();
+    let byte_capacity = vec.capacity() * std::mem::size_of::<T>();
+    let alloc = vec.into_boxed_slice();
+    let ptr = Box::<[T]>::into_raw(alloc) as *mut u8;
+    let mut new_vec = unsafe { Vec::from_raw_parts(ptr, byte_length, byte_capacity) };
+    while new_vec.len() % 4 != 0 {
+        new_vec.push(0); // pad to multiple of four bytes
+    }
+    new_vec
 }
 
 /// Coordinate configuration for a right-handed coordinate system with Z up.
@@ -149,10 +166,10 @@ fn main() {
                 normals[i][2] as f32,
             ],
             color: [
-                colors[i].r as u8,
-                colors[i].g as u8,
-                colors[i].b as u8,
-                colors[i].a as u8,
+                colors[i].r as f32 / 255.0,
+                colors[i].g as f32 / 255.0,
+                colors[i].b as f32 / 255.0,
+                colors[i].a as f32 / 255.0,
             ],
         });
     }
@@ -160,10 +177,10 @@ fn main() {
     let (min, max) = bounding_coords(&vertices);
     let vertex_buffer_length = (vertices.len() * std::mem::size_of::<Vertex>()) as u32;
     let indices_buffer_length = (indices.len() * std::mem::size_of::<u32>()) as u32;
-    let output = Output::Standard;
+    let output = Output::Binary;
 
-    let vertex_buffer = gltf_json::Buffer {
-        byte_length: vertex_buffer_length,
+    let buffer = gltf_json::Buffer {
+        byte_length: vertex_buffer_length + indices_buffer_length,
         extensions: Default::default(),
         extras: Default::default(),
         name: None,
@@ -174,21 +191,9 @@ fn main() {
         },
     };
 
-    let indices_buffer = gltf_json::Buffer {
-        byte_length: indices_buffer_length,
-        extensions: Default::default(),
-        extras: Default::default(),
-        name: None,
-        uri: if output == Output::Standard {
-            Some("buffer1.bin".into())
-        } else {
-            None
-        },
-    };
-
     let vertex_buffer_view = gltf_json::buffer::View {
         buffer: gltf_json::Index::new(0),
-        byte_length: vertex_buffer.byte_length,
+        byte_length: vertex_buffer_length,
         byte_offset: None,
         byte_stride: Some(std::mem::size_of::<Vertex>() as u32),
         extensions: Default::default(),
@@ -200,10 +205,10 @@ fn main() {
     };
 
     let indices_buffer_view = gltf_json::buffer::View {
-        buffer: gltf_json::Index::new(1),
-        byte_length: indices_buffer.byte_length,
-        byte_offset: None,
-        byte_stride: Some(std::mem::size_of::<u32>() as u32),
+        buffer: gltf_json::Index::new(0),
+        byte_length: indices_buffer_length,
+        byte_offset: Some(vertex_buffer_length),
+        byte_stride: None,
         extensions: Default::default(),
         extras: Default::default(),
         name: None,
@@ -250,7 +255,7 @@ fn main() {
         byte_offset: Some((6 * std::mem::size_of::<f32>()) as u32),
         count: vertices.len() as u32,
         component_type: gltf_json::validation::Checked::Valid(
-            gltf_json::accessor::GenericComponentType(gltf_json::accessor::ComponentType::U8),
+            gltf_json::accessor::GenericComponentType(gltf_json::accessor::ComponentType::F32),
         ),
         extensions: Default::default(),
         extras: Default::default(),
@@ -258,7 +263,7 @@ fn main() {
         min: None,
         max: None,
         name: None,
-        normalized: true,
+        normalized: false,
         sparse: None,
     };
 
@@ -278,6 +283,15 @@ fn main() {
         normalized: false,
         sparse: None,
     };
+
+    // let material = gltf_json::Material {
+    //     pbr_metallic_roughness: gltf_json::material::PbrMetallicRoughness { 
+    //         base_color_factor: PbrBaseColorFactor()
+    //         ..Default::default()
+    //     },
+
+    //     ..Default::default()
+    // };
 
     let primitive = gltf_json::mesh::Primitive {
         attributes: {
@@ -330,7 +344,7 @@ fn main() {
 
     let root = gltf_json::Root {
         accessors: vec![positions, normal, colors, indices_accessor],
-        buffers: vec![vertex_buffer, indices_buffer],
+        buffers: vec![buffer],
         buffer_views: vec![vertex_buffer_view, indices_buffer_view],
         meshes: vec![mesh],
         nodes: vec![node],
@@ -343,40 +357,50 @@ fn main() {
         ..Default::default()
     };
 
+
     match output {
         Output::Standard => {
+            let _ = fs::remove_dir_all("output");
             let _ = fs::create_dir("output");
 
             let writer = fs::File::create("output/output.gltf").expect("I/O error");
             gltf_json::serialize::to_writer_pretty(writer, &root).expect("Serialization error");
 
+
+            let mut combined = Vec::with_capacity(vertex_buffer_length as usize + indices_buffer_length as usize);
+            combined.extend_from_slice(&to_padded_byte_vector(vertices));
+            combined.extend_from_slice(&to_padded_byte_vector(indices));
+
             let mut writer = fs::File::create("output/buffer0.bin").expect("I/O error");
             writer
-                .write_all(bytemuck::cast_slice(&vertices))
-                .expect("I/O error");
-
-            let mut writer = fs::File::create("output/buffer1.bin").expect("I/O error");
-            writer
-                .write_all(bytemuck::cast_slice(&indices))
+                .write_all(&to_padded_byte_vector(combined))
                 .expect("I/O error");
         }
         Output::Binary => {
-            // let json_string = gltf_json::serialize::to_string(&root).expect("Serialization error");
+            let _ = fs::remove_dir_all("output");
+            let _ = fs::create_dir("output");
+            let json_string = gltf_json::serialize::to_string(&root).expect("Serialization error");
 
-            // let buffers =
+            let mut json_offset = json_string.len() as u32;
+            align_to_multiple_of_four(&mut json_offset);
+         
+            let mut combined = Vec::with_capacity(vertex_buffer_length as usize + indices_buffer_length as usize);
+            combined.extend_from_slice(&to_padded_byte_vector(vertices));
+            combined.extend_from_slice(&to_padded_byte_vector(indices));
 
-            // let mut json_offset = json_string.len() as u32;
-            // let glb = gltf::binary::Glb {
-            //     header: gltf::binary::Header {
-            //         magic: *b"glTF",
-            //         version: 2,
-            //         length: json_offset + buffer_length,
-            //     },
-            //     bin: Some(Cow::Owned(to_padded_byte_vector(triangle_vertices))),
-            //     json: Cow::Owned(json_string.into_bytes()),
-            // };
-            // let writer = std::fs::File::create("triangle.glb").expect("I/O error");
-            // glb.to_writer(writer).expect("glTF binary output error");
+            println!("{}", combined.len());
+            
+            let glb = gltf::binary::Glb {
+                header: gltf::binary::Header {
+                    magic: *b"glTF",
+                    version: 2,
+                    length: json_offset + vertex_buffer_length + indices_buffer_length,
+                },
+                bin: Some(std::borrow::Cow::Owned(to_padded_byte_vector(combined))),
+                json: std::borrow::Cow::Owned(json_string.into_bytes()),
+            };
+            let writer = std::fs::File::create("output/triangle.glb").expect("I/O error");
+            glb.to_writer(writer).expect("glTF binary output error");
         }
     }
     // let yo = gltf_json::Buffer {
