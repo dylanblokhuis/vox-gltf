@@ -110,7 +110,7 @@ pub const RIGHT_HANDED_Z_UP_CONFIG: QuadCoordinateConfig = QuadCoordinateConfig 
 const MAX_SIZE: u32 = 258;
 type ChunkShape = ConstShape3u32<MAX_SIZE, MAX_SIZE, MAX_SIZE>;
 fn main() {
-    let vox = load("./room.vox").unwrap();
+    let vox = load("./monu1.vox").unwrap();
     let model = &vox.models[0];
 
     println!("{:?}", model.size);
@@ -211,230 +211,220 @@ fn main() {
     let mut buffer_views = Slab::<json::buffer::View>::new();
     let mut materials = Slab::<json::Material>::new();
     let mut buffer = Vec::<u8>::new();
-
-    fn create_primitive(
-        vox: &dot_vox::DotVoxData,
-        palette_index: u8,
-        vertices: Vec<Vertex>,
-        indices: Vec<u32>,
-        accessors: &mut Slab<json::Accessor>,
-        buffer: &mut Vec<u8>,
-        buffer_views: &mut Slab<json::buffer::View>,
-        offset: &mut u32,
-        materials: &mut Slab<json::Material>,
-    ) -> json::mesh::Primitive {
-        let (min, max) = bounding_coords(&vertices);
-        let vertex_buffer_length = (vertices.len() * std::mem::size_of::<Vertex>()) as u32;
-        let indices_buffer_length = (indices.len() * std::mem::size_of::<u32>()) as u32;
-
-        // let mut combined = Vec::with_capacity(vertex_buffer_length as usize + indices_buffer_length as usize);
-        buffer.extend_from_slice(&to_padded_byte_vector(vertices.clone()));
-        buffer.extend_from_slice(&to_padded_byte_vector(indices.clone()));
-
-        let vertex_buffer_view = buffer_views.insert(json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: vertex_buffer_length,
-            byte_offset: Some(*offset),
-            byte_stride: Some(std::mem::size_of::<Vertex>() as u32),
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: Some(json::validation::Checked::Valid(
-                json::buffer::Target::ArrayBuffer,
-            )),
-        });
-        *offset += vertex_buffer_length;
-        let indices_buffer_view = buffer_views.insert(json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: indices_buffer_length,
-            byte_offset: Some(*offset),
-            byte_stride: None,
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: Some(json::validation::Checked::Valid(
-                json::buffer::Target::ElementArrayBuffer,
-            )),
-        });
-        *offset += indices_buffer_length;
-
-        let positions = accessors.insert(json::Accessor {
-            buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-            byte_offset: Some(0),
-            count: vertices.len() as u32,
-            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: json::validation::Checked::Valid(json::accessor::Type::Vec3),
-            min: Some(json::Value::from(Vec::from(min))),
-            max: Some(json::Value::from(Vec::from(max))),
-            name: None,
-            normalized: false,
-            sparse: None,
-        });
-        let normal = accessors.insert(json::Accessor {
-            buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-            byte_offset: Some((3 * std::mem::size_of::<f32>()) as u32),
-            count: vertices.len() as u32,
-            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: json::validation::Checked::Valid(json::accessor::Type::Vec3),
-            min: None,
-            max: None,
-            name: None,
-            normalized: false,
-            sparse: None,
-        });
-
-        let colors = accessors.insert(json::Accessor {
-            buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-            byte_offset: Some((6 * std::mem::size_of::<f32>()) as u32),
-            count: vertices.len() as u32,
-            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: json::validation::Checked::Valid(json::accessor::Type::Vec4),
-            min: None,
-            max: None,
-            name: None,
-            normalized: false,
-            sparse: None,
-        });
-
-        let uv = accessors.insert(json::Accessor {
-            buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-            byte_offset: Some((10 * std::mem::size_of::<f32>()) as u32),
-            count: vertices.len() as u32,
-            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: json::validation::Checked::Valid(json::accessor::Type::Vec2),
-            min: None,
-            max: None,
-            name: None,
-            normalized: false,
-            sparse: None,
-        });
-
-        let indices_accessor = accessors.insert(json::Accessor {
-            buffer_view: Some(json::Index::new(indices_buffer_view as u32)),
-            byte_offset: Some(0),
-            count: indices.len() as u32,
-            component_type: json::validation::Checked::Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::U32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: json::validation::Checked::Valid(json::accessor::Type::Scalar),
-            min: None,
-            max: None,
-            name: None,
-            normalized: false,
-            sparse: None,
-        });
-
-        let vox_material = &vox.materials[palette_index as usize];
-        let vox_color = vox.palette[palette_index as usize];
-
-        println!("Material type: {:?}", vox_material);
-
-        let material = materials.insert(json::Material {
-            pbr_metallic_roughness: json::material::PbrMetallicRoughness {
-                base_color_factor: PbrBaseColorFactor([
-                    vox_color.r as f32 / 255.0,
-                    vox_color.g as f32 / 255.0,
-                    vox_color.b as f32 / 255.0,
-                    vox_color.a as f32 / 255.0,
-                ]),
-                metallic_factor: json::material::StrengthFactor(
-                    vox_material.metalness().unwrap_or(0.0),
-                ),
-                roughness_factor: json::material::StrengthFactor(
-                    vox_material.roughness().unwrap_or(0.0),
-                ),
-
-                ..Default::default()
-            },
-            emissive_factor: if vox_material.material_type() == Some("_emit") {
-                json::material::EmissiveFactor([
-                    vox_color.r as f32 / 255.0,
-                    vox_color.g as f32 / 255.0,
-                    vox_color.b as f32 / 255.0,
-                ])
-            } else {
-                json::material::EmissiveFactor([0.0, 0.0, 0.0])
-            },
-
-            extensions: Some(json::extensions::material::Material {
-                emissive_strength: if vox_material.material_type() == Some("_emit") {
-                    Some(json::extensions::material::EmissiveStrength {
-                        emissive_strength: json::extensions::material::EmissiveStrengthFactor(
-                            (vox_material.emission().unwrap() * 10.0)
-                                * vox_material.radiant_flux().unwrap(),
-                        ),
-                    })
-                } else {
-                    None
-                },
-                ior: Some(json::extensions::material::Ior {
-                    ior: IndexOfRefraction(1.0 + vox_material.refractive_index().unwrap()),
-                    ..Default::default()
-                }),
-                transmission: if vox_material.material_type() == Some("_glass") {
-                    Some(json::extensions::material::Transmission {
-                        transmission_factor: TransmissionFactor(
-                            vox_material.transparency().unwrap_or(0.0),
-                        ),
-                        ..Default::default()
-                    })
-                } else {
-                    None
-                },
-            }),
-            ..Default::default()
-        });
-
-        json::mesh::Primitive {
-            attributes: {
-                let mut map = std::collections::BTreeMap::new();
-                map.insert(
-                    json::validation::Checked::Valid(json::mesh::Semantic::Positions),
-                    json::Index::new(positions as u32),
-                );
-                map.insert(
-                    json::validation::Checked::Valid(json::mesh::Semantic::Normals),
-                    json::Index::new(normal as u32),
-                );
-                map.insert(
-                    json::validation::Checked::Valid(json::mesh::Semantic::Colors(0)),
-                    json::Index::new(colors as u32),
-                );
-                map.insert(
-                    json::validation::Checked::Valid(json::mesh::Semantic::TexCoords(0)),
-                    json::Index::new(uv as u32),
-                );
-
-                map
-            },
-            extensions: Default::default(),
-            extras: Default::default(),
-            indices: Some(json::Index::new(indices_accessor as u32)),
-            material: Some(json::Index::new(material as u32)),
-            mode: json::validation::Checked::Valid(json::mesh::Mode::Triangles),
-            targets: None,
-        }
-    }
-
     let mut offset = 0;
+
+    let mut create_primitive =
+        |palette_index: u8, vertices: Vec<Vertex>, indices: Vec<u32>| -> json::mesh::Primitive {
+            let (min, max) = bounding_coords(&vertices);
+            let vertex_buffer_length = (vertices.len() * std::mem::size_of::<Vertex>()) as u32;
+            let indices_buffer_length = (indices.len() * std::mem::size_of::<u32>()) as u32;
+
+            // let mut combined = Vec::with_capacity(vertex_buffer_length as usize + indices_buffer_length as usize);
+            buffer.extend_from_slice(&to_padded_byte_vector(vertices.clone()));
+            buffer.extend_from_slice(&to_padded_byte_vector(indices.clone()));
+
+            let vertex_buffer_view = buffer_views.insert(json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: vertex_buffer_length,
+                byte_offset: Some(offset),
+                byte_stride: Some(std::mem::size_of::<Vertex>() as u32),
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+                target: Some(json::validation::Checked::Valid(
+                    json::buffer::Target::ArrayBuffer,
+                )),
+            });
+            offset += vertex_buffer_length;
+            let indices_buffer_view = buffer_views.insert(json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: indices_buffer_length,
+                byte_offset: Some(offset),
+                byte_stride: None,
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+                target: Some(json::validation::Checked::Valid(
+                    json::buffer::Target::ElementArrayBuffer,
+                )),
+            });
+            offset += indices_buffer_length;
+
+            let positions = accessors.insert(json::Accessor {
+                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
+                byte_offset: Some(0),
+                count: vertices.len() as u32,
+                component_type: json::validation::Checked::Valid(
+                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
+                ),
+                extensions: Default::default(),
+                extras: Default::default(),
+                type_: json::validation::Checked::Valid(json::accessor::Type::Vec3),
+                min: Some(json::Value::from(Vec::from(min))),
+                max: Some(json::Value::from(Vec::from(max))),
+                name: None,
+                normalized: false,
+                sparse: None,
+            });
+            let normal = accessors.insert(json::Accessor {
+                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
+                byte_offset: Some((3 * std::mem::size_of::<f32>()) as u32),
+                count: vertices.len() as u32,
+                component_type: json::validation::Checked::Valid(
+                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
+                ),
+                extensions: Default::default(),
+                extras: Default::default(),
+                type_: json::validation::Checked::Valid(json::accessor::Type::Vec3),
+                min: None,
+                max: None,
+                name: None,
+                normalized: false,
+                sparse: None,
+            });
+
+            let colors = accessors.insert(json::Accessor {
+                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
+                byte_offset: Some((6 * std::mem::size_of::<f32>()) as u32),
+                count: vertices.len() as u32,
+                component_type: json::validation::Checked::Valid(
+                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
+                ),
+                extensions: Default::default(),
+                extras: Default::default(),
+                type_: json::validation::Checked::Valid(json::accessor::Type::Vec4),
+                min: None,
+                max: None,
+                name: None,
+                normalized: false,
+                sparse: None,
+            });
+
+            let uv = accessors.insert(json::Accessor {
+                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
+                byte_offset: Some((10 * std::mem::size_of::<f32>()) as u32),
+                count: vertices.len() as u32,
+                component_type: json::validation::Checked::Valid(
+                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
+                ),
+                extensions: Default::default(),
+                extras: Default::default(),
+                type_: json::validation::Checked::Valid(json::accessor::Type::Vec2),
+                min: None,
+                max: None,
+                name: None,
+                normalized: false,
+                sparse: None,
+            });
+
+            let indices_accessor = accessors.insert(json::Accessor {
+                buffer_view: Some(json::Index::new(indices_buffer_view as u32)),
+                byte_offset: Some(0),
+                count: indices.len() as u32,
+                component_type: json::validation::Checked::Valid(
+                    json::accessor::GenericComponentType(json::accessor::ComponentType::U32),
+                ),
+                extensions: Default::default(),
+                extras: Default::default(),
+                type_: json::validation::Checked::Valid(json::accessor::Type::Scalar),
+                min: None,
+                max: None,
+                name: None,
+                normalized: false,
+                sparse: None,
+            });
+
+            let vox_material = &vox.materials[palette_index as usize];
+            let vox_color = vox.palette[palette_index as usize];
+
+            println!("Material type: {:?}", vox_material);
+
+            let material = materials.insert(json::Material {
+                pbr_metallic_roughness: json::material::PbrMetallicRoughness {
+                    base_color_factor: PbrBaseColorFactor([
+                        vox_color.r as f32 / 255.0,
+                        vox_color.g as f32 / 255.0,
+                        vox_color.b as f32 / 255.0,
+                        vox_color.a as f32 / 255.0,
+                    ]),
+                    metallic_factor: json::material::StrengthFactor(
+                        vox_material.metalness().unwrap_or(0.0),
+                    ),
+                    roughness_factor: json::material::StrengthFactor(
+                        vox_material.roughness().unwrap_or(0.0),
+                    ),
+
+                    ..Default::default()
+                },
+                emissive_factor: if vox_material.material_type() == Some("_emit") {
+                    json::material::EmissiveFactor([
+                        vox_color.r as f32 / 255.0,
+                        vox_color.g as f32 / 255.0,
+                        vox_color.b as f32 / 255.0,
+                    ])
+                } else {
+                    json::material::EmissiveFactor([0.0, 0.0, 0.0])
+                },
+
+                extensions: Some(json::extensions::material::Material {
+                    emissive_strength: if vox_material.material_type() == Some("_emit") {
+                        Some(json::extensions::material::EmissiveStrength {
+                            emissive_strength: json::extensions::material::EmissiveStrengthFactor(
+                                (vox_material.emission().unwrap() * 10.0)
+                                    * vox_material.radiant_flux().unwrap(),
+                            ),
+                        })
+                    } else {
+                        None
+                    },
+                    ior: Some(json::extensions::material::Ior {
+                        ior: IndexOfRefraction(1.0 + vox_material.refractive_index().unwrap()),
+                        ..Default::default()
+                    }),
+                    transmission: if vox_material.material_type() == Some("_glass") {
+                        Some(json::extensions::material::Transmission {
+                            transmission_factor: TransmissionFactor(
+                                vox_material.transparency().unwrap_or(0.0),
+                            ),
+                            ..Default::default()
+                        })
+                    } else {
+                        None
+                    },
+                }),
+                ..Default::default()
+            });
+
+            json::mesh::Primitive {
+                attributes: {
+                    let mut map = std::collections::BTreeMap::new();
+                    map.insert(
+                        json::validation::Checked::Valid(json::mesh::Semantic::Positions),
+                        json::Index::new(positions as u32),
+                    );
+                    map.insert(
+                        json::validation::Checked::Valid(json::mesh::Semantic::Normals),
+                        json::Index::new(normal as u32),
+                    );
+                    map.insert(
+                        json::validation::Checked::Valid(json::mesh::Semantic::Colors(0)),
+                        json::Index::new(colors as u32),
+                    );
+                    map.insert(
+                        json::validation::Checked::Valid(json::mesh::Semantic::TexCoords(0)),
+                        json::Index::new(uv as u32),
+                    );
+
+                    map
+                },
+                extensions: Default::default(),
+                extras: Default::default(),
+                indices: Some(json::Index::new(indices_accessor as u32)),
+                material: Some(json::Index::new(material as u32)),
+                mode: json::validation::Checked::Valid(json::mesh::Mode::Triangles),
+                targets: None,
+            }
+        };
 
     let primitives = grouped_vertices
         .keys()
@@ -442,15 +432,9 @@ fn main() {
             let vertices = grouped_vertices.get(palette_index)?;
             let indices = grouped_indices.get(palette_index)?;
             Some(create_primitive(
-                &vox,
                 *palette_index,
                 vertices.clone(),
                 indices.clone(),
-                &mut accessors,
-                &mut buffer,
-                &mut buffer_views,
-                &mut offset,
-                &mut materials,
             ))
         })
         .collect::<Vec<_>>();
