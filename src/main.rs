@@ -35,7 +35,15 @@ fn main() {
         _ => panic!("\nInvalid output type, must be one of: seperate, glb, embedded\nExample: `vox_gltf ./monu1.vox glb`\n"),
     };
     let gltf = convert_vox_to_gltf(vox, output);
-    let destination = args.destination.unwrap_or(".".to_string());
+    let destination = if let Some(destination) = args.destination {
+        destination
+    } else {
+        if output == GltfOutput::GltfSeperate {
+            "./".into()
+        } else {
+            "./output.glb".into()
+        }
+    };
     let path = Path::new(&destination);
 
     match output {
