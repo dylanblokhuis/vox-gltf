@@ -155,222 +155,6 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
     let mut buffer = Vec::<u8>::new();
     let mut offset = 0u32;
 
-    // Helper to create a glTF primitive for a palette/material bucket
-    let mut create_primitive =
-        |palette_index: u8, vertices: Vec<Vertex>, indices: Vec<u32>| -> json::mesh::Primitive {
-            let (min, max) = bounding_coords(&vertices);
-            let vertex_buffer_length = (vertices.len() * std::mem::size_of::<Vertex>()) as u32;
-            let indices_buffer_length = (indices.len() * std::mem::size_of::<u32>()) as u32;
-
-            // let mut combined = Vec::with_capacity(vertex_buffer_length as usize + indices_buffer_length as usize);
-            buffer.extend_from_slice(&to_padded_byte_vector(vertices.clone()));
-            buffer.extend_from_slice(&to_padded_byte_vector(indices.clone()));
-
-            let vertex_buffer_view = buffer_views.insert(json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: vertex_buffer_length,
-                byte_offset: Some(offset),
-                byte_stride: Some(std::mem::size_of::<Vertex>() as u32),
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-                target: Some(json::validation::Checked::Valid(
-                    json::buffer::Target::ArrayBuffer,
-                )),
-            });
-            offset += vertex_buffer_length;
-            let indices_buffer_view = buffer_views.insert(json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: indices_buffer_length,
-                byte_offset: Some(offset),
-                byte_stride: None,
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-                target: Some(json::validation::Checked::Valid(
-                    json::buffer::Target::ElementArrayBuffer,
-                )),
-            });
-            offset += indices_buffer_length;
-
-            let positions = accessors.insert(json::Accessor {
-                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-                byte_offset: Some(0),
-                count: vertices.len() as u32,
-                component_type: json::validation::Checked::Valid(
-                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
-                ),
-                extensions: Default::default(),
-                extras: Default::default(),
-                type_: json::validation::Checked::Valid(json::accessor::Type::Vec3),
-                min: Some(json::Value::from(Vec::from(min))),
-                max: Some(json::Value::from(Vec::from(max))),
-                name: None,
-                normalized: false,
-                sparse: None,
-            });
-            let normal = accessors.insert(json::Accessor {
-                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-                byte_offset: Some((3 * std::mem::size_of::<f32>()) as u32),
-                count: vertices.len() as u32,
-                component_type: json::validation::Checked::Valid(
-                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
-                ),
-                extensions: Default::default(),
-                extras: Default::default(),
-                type_: json::validation::Checked::Valid(json::accessor::Type::Vec3),
-                min: None,
-                max: None,
-                name: None,
-                normalized: false,
-                sparse: None,
-            });
-
-            let colors = accessors.insert(json::Accessor {
-                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-                byte_offset: Some((6 * std::mem::size_of::<f32>()) as u32),
-                count: vertices.len() as u32,
-                component_type: json::validation::Checked::Valid(
-                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
-                ),
-                extensions: Default::default(),
-                extras: Default::default(),
-                type_: json::validation::Checked::Valid(json::accessor::Type::Vec4),
-                min: None,
-                max: None,
-                name: None,
-                normalized: false,
-                sparse: None,
-            });
-
-            let uv = accessors.insert(json::Accessor {
-                buffer_view: Some(json::Index::new(vertex_buffer_view as u32)),
-                byte_offset: Some((10 * std::mem::size_of::<f32>()) as u32),
-                count: vertices.len() as u32,
-                component_type: json::validation::Checked::Valid(
-                    json::accessor::GenericComponentType(json::accessor::ComponentType::F32),
-                ),
-                extensions: Default::default(),
-                extras: Default::default(),
-                type_: json::validation::Checked::Valid(json::accessor::Type::Vec2),
-                min: None,
-                max: None,
-                name: None,
-                normalized: false,
-                sparse: None,
-            });
-
-            let indices_accessor = accessors.insert(json::Accessor {
-                buffer_view: Some(json::Index::new(indices_buffer_view as u32)),
-                byte_offset: Some(0),
-                count: indices.len() as u32,
-                component_type: json::validation::Checked::Valid(
-                    json::accessor::GenericComponentType(json::accessor::ComponentType::U32),
-                ),
-                extensions: Default::default(),
-                extras: Default::default(),
-                type_: json::validation::Checked::Valid(json::accessor::Type::Scalar),
-                min: None,
-                max: None,
-                name: None,
-                normalized: false,
-                sparse: None,
-            });
-
-            let vox_material = &vox.materials[palette_index as usize];
-            let vox_color = vox.palette[palette_index as usize];
-
-            log::debug!("Material type: {:?}", vox_material);
-
-            let material = materials.insert(json::Material {
-                pbr_metallic_roughness: json::material::PbrMetallicRoughness {
-                    base_color_factor: PbrBaseColorFactor([
-                        vox_color.r as f32 / 255.0,
-                        vox_color.g as f32 / 255.0,
-                        vox_color.b as f32 / 255.0,
-                        vox_color.a as f32 / 255.0,
-                    ]),
-                    metallic_factor: json::material::StrengthFactor(
-                        vox_material.metalness().unwrap_or(0.0),
-                    ),
-                    roughness_factor: json::material::StrengthFactor(
-                        vox_material.roughness().unwrap_or(0.0),
-                    ),
-
-                    ..Default::default()
-                },
-                emissive_factor: if vox_material.material_type() == Some("_emit") {
-                    json::material::EmissiveFactor([
-                        vox_color.r as f32 / 255.0,
-                        vox_color.g as f32 / 255.0,
-                        vox_color.b as f32 / 255.0,
-                    ])
-                } else {
-                    json::material::EmissiveFactor([0.0, 0.0, 0.0])
-                },
-
-                extensions: Some(json::extensions::material::Material {
-                    emissive_strength: if vox_material.material_type() == Some("_emit") {
-                        Some(json::extensions::material::EmissiveStrength {
-                            emissive_strength: json::extensions::material::EmissiveStrengthFactor(
-                                (vox_material.emission().unwrap() * 50.0)
-                                    * (vox_material.radiant_flux().unwrap()),
-                            ),
-                        })
-                    } else {
-                        None
-                    },
-                    ior: Some(json::extensions::material::Ior {
-                        ior: IndexOfRefraction(
-                            1.0 + vox_material.refractive_index().unwrap_or_else(|| 0.5),
-                        ),
-                        ..Default::default()
-                    }),
-                    transmission: if vox_material.material_type() == Some("_glass") {
-                        Some(json::extensions::material::Transmission {
-                            transmission_factor: TransmissionFactor(
-                                vox_material.transparency().unwrap_or(0.0),
-                            ),
-                            ..Default::default()
-                        })
-                    } else {
-                        None
-                    },
-                }),
-                ..Default::default()
-            });
-
-            json::mesh::Primitive {
-                attributes: {
-                    let mut map = std::collections::BTreeMap::new();
-                    map.insert(
-                        json::validation::Checked::Valid(json::mesh::Semantic::Positions),
-                        json::Index::new(positions as u32),
-                    );
-                    map.insert(
-                        json::validation::Checked::Valid(json::mesh::Semantic::Normals),
-                        json::Index::new(normal as u32),
-                    );
-                    map.insert(
-                        json::validation::Checked::Valid(json::mesh::Semantic::Colors(0)),
-                        json::Index::new(colors as u32),
-                    );
-                    map.insert(
-                        json::validation::Checked::Valid(json::mesh::Semantic::TexCoords(0)),
-                        json::Index::new(uv as u32),
-                    );
-
-                    map
-                },
-                extensions: Default::default(),
-                extras: Default::default(),
-                indices: Some(json::Index::new(indices_accessor as u32)),
-                material: Some(json::Index::new(material as u32)),
-                mode: json::validation::Checked::Valid(json::mesh::Mode::Triangles),
-                targets: None,
-            }
-        };
-
     // Refactor recursion into a builder struct (closures cannot self-recurse)
     struct SceneBuilder<'a> {
         vox: &'a DotVoxData,
@@ -529,14 +313,32 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
 
             let vox_material = &self.vox.materials[palette_index as usize];
             let vox_color = self.vox.palette[palette_index as usize];
+            let wants_blend = vox_material.transparency().unwrap_or(0.0) > 0.0;
 
+            if vox_material.material_type() == Some("_glass") {
+                println!(
+                    "transparency {} refractive_index {} wants_blend {}",
+                    vox_material.transparency().unwrap_or(0.0),
+                    vox_material.refractive_index().unwrap_or_else(|| 1.0),
+                    wants_blend
+                );
+            }
             let material = self.materials.insert(json::Material {
+                name: Some(format!("PaletteIndex_{}", palette_index + 1)),
                 pbr_metallic_roughness: json::material::PbrMetallicRoughness {
                     base_color_factor: PbrBaseColorFactor([
                         vox_color.r as f32 / 255.0,
                         vox_color.g as f32 / 255.0,
                         vox_color.b as f32 / 255.0,
-                        vox_color.a as f32 / 255.0,
+                        {
+                            let t = vox_material.transparency().unwrap_or(0.0);
+                            let a = 1.0 - t;
+                            if vox_material.material_type() == Some("_glass") && a <= 0.0 {
+                                1.0 - (t * 0.666) // glass should never be fully invisible
+                            } else {
+                                a
+                            }
+                        },
                     ]),
                     metallic_factor: json::material::StrengthFactor(
                         vox_material.metalness().unwrap_or(0.0),
@@ -545,6 +347,11 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
                         vox_material.roughness().unwrap_or(0.0),
                     ),
                     ..Default::default()
+                },
+                alpha_mode: if wants_blend {
+                    json::validation::Checked::Valid(json::material::AlphaMode::Blend)
+                } else {
+                    json::validation::Checked::Valid(json::material::AlphaMode::Opaque)
                 },
                 emissive_factor: if vox_material.material_type() == Some("_emit") {
                     json::material::EmissiveFactor([
@@ -574,16 +381,17 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
                         ),
                         ..Default::default()
                     }),
-                    transmission: if vox_material.material_type() == Some("_glass") {
-                        Some(json::extensions::material::Transmission {
-                            transmission_factor: TransmissionFactor(
-                                vox_material.transparency().unwrap_or(0.0),
-                            ),
-                            ..Default::default()
-                        })
-                    } else {
-                        None
-                    },
+                    transmission: None,
+                    // transmission: if vox_material.material_type() == Some("_glass") {
+                    //     Some(json::extensions::material::Transmission {
+                    //         transmission_factor: TransmissionFactor(
+                    //             vox_material.transparency().unwrap_or(0.0),
+                    //         ),
+                    //         ..Default::default()
+                    //     })
+                    // } else {
+                    //     None
+                    // },
                 }),
                 ..Default::default()
             });
