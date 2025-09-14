@@ -7,8 +7,11 @@ use block_mesh::{
     Voxel, VoxelVisibility,
 };
 use dot_vox::DotVoxData;
-use gltf::{json::{self, extensions::material::IndexOfRefraction}, Glb};
 use gltf::json::{extensions::material::TransmissionFactor, material::PbrBaseColorFactor};
+use gltf::{
+    json::{self, extensions::material::IndexOfRefraction},
+    Glb,
+};
 use slab::Slab;
 
 pub mod dot_vox {
@@ -112,7 +115,8 @@ pub struct GltfData {
 
 impl GltfData {
     pub fn into_glb(self) -> Glb<'static> {
-        let json_string = gltf::json::serialize::to_string(&self.root).expect("Serialization error");
+        let json_string =
+            gltf::json::serialize::to_string(&self.root).expect("Serialization error");
 
         let mut json_offset = json_string.len() as u32;
         align_to_multiple_of_four(&mut json_offset);
@@ -199,7 +203,7 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
 
             let mut vertices = Vec::with_capacity(4);
             for ((position, normals), uv) in face
-                .quad_mesh_positions(&quad, 1.0)
+                .quad_mesh_positions(&quad, 0.1)
                 .iter()
                 .zip(face.quad_mesh_normals())
                 .zip(face.tex_coords(RIGHT_HANDED_Z_UP_CONFIG.u_flip_face, false, &quad))
@@ -398,8 +402,8 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
                     emissive_strength: if vox_material.material_type() == Some("_emit") {
                         Some(json::extensions::material::EmissiveStrength {
                             emissive_strength: json::extensions::material::EmissiveStrengthFactor(
-                                (vox_material.emission().unwrap() * 10.0)
-                                    * vox_material.radiant_flux().unwrap(),
+                                (vox_material.emission().unwrap() * 50.0)
+                                    * (vox_material.radiant_flux().unwrap()),
                             ),
                         })
                     } else {
