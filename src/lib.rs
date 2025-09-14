@@ -512,25 +512,15 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
                 }
             }
 
-            // Center geometry around origin using global AABB across all groups
-            let mut global_min = [f32::MAX, f32::MAX, f32::MAX];
-            let mut global_max = [f32::MIN, f32::MIN, f32::MIN];
-            for verts in grouped_vertices.values() {
-                for v in verts {
-                    for i in 0..3 {
-                        if v.position[i] < global_min[i] {
-                            global_min[i] = v.position[i];
-                        }
-                        if v.position[i] > global_max[i] {
-                            global_max[i] = v.position[i];
-                        }
-                    }
-                }
-            }
+            // Center model based on dot_vox::Model size (fast path)
+            // Note: vertices were generated in a grid padded by +1 voxel on each axis
+            // and scaled by 0.1 units per voxel. Account for both here.
+            let s = model.size; // dot_vox::Size { x, y, z }
+            let scale = 0.1f32;
             let center = [
-                (global_min[0] + global_max[0]) * 0.5,
-                (global_min[1] + global_max[1]) * 0.5,
-                (global_min[2] + global_max[2]) * 0.5,
+                ((s.x as f32) * 0.5 + 1.0) * scale, // X
+                ((s.z as f32) * 0.5 + 1.0) * scale, // Z becomes Y in Z-up
+                ((s.y as f32) * 0.5 + 1.0) * scale, // Y becomes Z in Z-up
             ];
             for verts in grouped_vertices.values_mut() {
                 for v in verts.iter_mut() {
