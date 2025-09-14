@@ -321,7 +321,9 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
                         None
                     },
                     ior: Some(json::extensions::material::Ior {
-                        ior: IndexOfRefraction(1.0 + vox_material.refractive_index().unwrap()),
+                        ior: IndexOfRefraction(
+                            1.0 + vox_material.refractive_index().unwrap_or_else(|| 0.5),
+                        ),
                         ..Default::default()
                     }),
                     transmission: if vox_material.material_type() == Some("_glass") {
@@ -699,6 +701,34 @@ pub fn convert_vox_to_gltf(vox: DotVoxData, output: GltfOutput) -> GltfData {
                         index,
                         max_index
                     );
+                }
+            }
+
+            // Center geometry around origin using global AABB across all groups
+            let mut global_min = [f32::MAX, f32::MAX, f32::MAX];
+            let mut global_max = [f32::MIN, f32::MIN, f32::MIN];
+            for verts in grouped_vertices.values() {
+                for v in verts {
+                    for i in 0..3 {
+                        if v.position[i] < global_min[i] {
+                            global_min[i] = v.position[i];
+                        }
+                        if v.position[i] > global_max[i] {
+                            global_max[i] = v.position[i];
+                        }
+                    }
+                }
+            }
+            let center = [
+                (global_min[0] + global_max[0]) * 0.5,
+                (global_min[1] + global_max[1]) * 0.5,
+                (global_min[2] + global_max[2]) * 0.5,
+            ];
+            for verts in grouped_vertices.values_mut() {
+                for v in verts.iter_mut() {
+                    v.position[0] -= center[0];
+                    v.position[1] -= center[1];
+                    v.position[2] -= center[2];
                 }
             }
 
